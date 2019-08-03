@@ -15,19 +15,12 @@ Parameters:
     Description: The name for a project pipeline stage, such as Staging or Prod, for which resources are provisioned and deployed.
     Default: ''
 
-Globals:
-  Function:
-    AutoPublishAlias: live
-    DeploymentPreference:
-      Enabled: true
-      Type: Canary10Percent5Minutes
-      Role: !Ref CodeDeployRole
-
 Resources:
   HelloWorld:
     Type: AWS::Serverless::Function
     Properties:
       Handler: index.handler
+      CodeUri: .   
       Runtime: nodejs8.10
       Environment:
         Variables:
@@ -36,6 +29,13 @@ Resources:
         Fn::GetAtt:
         - LambdaExecutionRole
         - Arn
+      AutoPublishAlias: live
+      DeploymentPreference:
+        # Type: Linear10PercentEvery1Minute
+        # Type: Canary10Percent10Minutes
+        Type: AllAtOnce
+        Hooks:
+          PreTraffic: !Ref PreTrafficHook
       Events:
         GetEvent:
           Type: Api
@@ -47,6 +47,34 @@ Resources:
           Properties:
             Path: /
             Method: post
+
+  PreTrafficHook:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: preTrafficHook.handler
+      CodeUri: .    
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+              - "codedeploy:PutLifecycleEventHookExecutionStatus"
+            Resource:
+              !Sub 'arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:*/*'
+        - Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+              - "lambda:InvokeFunction"
+            Resource: !Ref HelloWorld.Version
+      Runtime: nodejs8.10
+      FunctionName: 'CodeDeployHook_preTrafficHook'
+      DeploymentPreference:
+        Enabled: false
+      Environment:
+        Variables:
+          NewVersion: !Ref HelloWorld.Version
+
   LambdaExecutionRole:
     Description: Creating service role in IAM for AWS Lambda
     Type: AWS::IAM::Role
